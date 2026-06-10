@@ -50,6 +50,7 @@
   let detectActive    = true;
   let _gameStartTime  = 0;
   let infiniteLives   = false;
+  let _hasContent     = false;  // true once content/ folder has at least one XML
   let nextBarrelId = 0;
   let spawnTimer   = 0;
   let lastTs       = null;
@@ -106,7 +107,6 @@
     const pluginDiv = document.getElementById('plugin-rock_n_rolla');
     const isMgMode  = pluginDiv && pluginDiv.dataset.mgActive === '1';
     const navbar    = document.getElementById('navbar');
-    // In minigame mode the div is a fixed full-screen overlay — no navbar offset needed.
     const navH      = (!isMgMode && navbar) ? navbar.offsetHeight : 0;
     const totalH    = window.innerHeight - navH;
 
@@ -127,10 +127,21 @@
       main.style.height = mainH   + 'px';
     }
 
-    // In plugin-nav mode, size the screen div to fill the area below the fixed navbar.
+    // In plugin-nav mode, apply layout only when this is the active screen so that
+    // slopsmith's .screen{display:none} can still hide the div when navigating away.
     if (pluginDiv && !isMgMode) {
-      pluginDiv.style.marginTop = navH   + 'px';
-      pluginDiv.style.height    = totalH + 'px';
+      const isActive = pluginDiv.classList.contains('active');
+      if (isActive) {
+        pluginDiv.style.display       = 'flex';
+        pluginDiv.style.flexDirection = 'column';
+        pluginDiv.style.marginTop     = navH   + 'px';
+        pluginDiv.style.height        = totalH + 'px';
+      } else {
+        pluginDiv.style.display       = '';
+        pluginDiv.style.flexDirection = '';
+        pluginDiv.style.marginTop     = '';
+        pluginDiv.style.height        = '';
+      }
     }
   }
 
@@ -443,7 +454,21 @@
   /* ═══════════════════════════════════════════
      GAME LOGIC
   ═══════════════════════════════════════════ */
-  function startGame() {
+  async function startGame() {
+    // Detection is always required — force it on and sync the button
+    detectActive = true;
+    const detectBtn = document.getElementById('btn-detect');
+    if (detectBtn) { detectBtn.classList.add('active-detect'); detectBtn.textContent = '🎙 DETECT ON'; }
+
+    // Pick a fresh random track from content/ on every play
+    if (_hasContent) {
+      try {
+        const res  = await fetch('/api/rock_n_rolla/random');
+        const data = await res.json();
+        if (!data.error) applySourceData(data);
+      } catch(e) {}
+    }
+
     if (!chordQueue.length) {
       overlayTitle.textContent = '⚠ NO SOURCE';
       overlayBody.textContent  = 'Load an arrangement XML first!';
@@ -473,7 +498,7 @@
     updateHUD();
     updateDiagrams();
     scheduleMetronome(performance.now());
-    if (detectActive) startChordScorer();
+    startChordScorer();
     if (raf) cancelAnimationFrame(raf);
     raf = requestAnimationFrame(gameLoop);
   }
@@ -708,23 +733,6 @@
 
   function tryChordHit(chordName) {
     if (!gameRunning) return;
-
-    // Verify the player is actually playing this chord via the SDK scorer
-    if (_chordScorer) {
-      const chord = chordPool.find(c => c.name === chordName);
-      if (!chord) return;
-      const notes = chord.frets
-        .map((f, s) => f === -1 ? null : { s, f })
-        .filter(Boolean);
-      try {
-        const result = _chordScorer.score({ notes, arrangement: 'guitar', tuning: [0, 0, 0, 0, 0, 0] });
-        debugEvent('score()', { chord: chordName, hit: result.hit, score: result.score?.toFixed?.(3) });
-        if (!result.hit) return;
-      } catch(e) {
-        debugEvent('score() err', { msg: e.message });
-        return;
-      }
-    }
 
     const hitLineY = canvas.height * HIT_ZONE_Y_RAT;
 
@@ -1630,48 +1638,36 @@
   }
 
   // Active SDK chord scorer instance
-  let _chordScorer   = null;
-  let _scorerPollId  = null;
+  let _chordScorer = null;
 
   function startChordScorer() {
     stopChordScorer();
     const sdk = window.slopsmithMinigames;
-    if (!sdk || !sdk.scoring || !sdk.scoring.createChord) {
-      debugEvent('SDK', 'not available — falling back to events');
+    if (!sdk?.scoring?.createChord) {
+      debugEvent('SDK', 'not available — falling back to legacy events');
       startLegacyDetect();
       return;
     }
     try {
       _chordScorer = sdk.scoring.createChord();
-      _chordScorer.start();
-      _scorerPollId = setInterval(_pollScorer, 60);
-      debugEvent('SDK', 'createChord started OK');
+      // createChord() starts immediately; wire the hit event (no .start() method)
+      _chordScorer.on('hit', (detail) => {
+        if (!gameRunning || !detectActive) return;
+        const name = detail?.chordName || detail?.note?.chordName || detail?.chord?.name;
+        debugEvent('SDK hit', { chord: name });
+        if (name) tryChordHit(name);
+      });
+      debugEvent('SDK', 'createChord wired OK');
     } catch(e) {
       debugEvent('SDK error', { msg: e.message });
+      _chordScorer = null;
       startLegacyDetect();
     }
   }
 
   function stopChordScorer() {
-    if (_scorerPollId) { clearInterval(_scorerPollId); _scorerPollId = null; }
     if (_chordScorer)  { try { _chordScorer.stop(); } catch(e) {} _chordScorer = null; }
     stopLegacyDetect();
-  }
-
-  function _pollScorer() {
-    if (!gameRunning || !detectActive || !_chordScorer) return;
-    const _hTopY = canvas.height * 0.10;
-    const _hBaseY = canvas.height * 0.82;
-    const _hitT  = (canvas.height * HIT_ZONE_Y_RAT - _hTopY) / (_hBaseY - _hTopY);
-    let best = null, bestDist = Infinity;
-    for (const b of barrels) {
-      if (b.hit) continue;
-      const d = Math.abs(b.t - _hitT);
-      if (d < bestDist) { bestDist = d; best = b; }
-    }
-    if (best && bestDist < 0.15) {
-      tryChordHit(best.chord.name);
-    }
   }
 
   // Update chord pool in scorer when source changes (no-op for execution-on-demand path)
@@ -1887,6 +1883,16 @@
   updateDiagrams();
   overlay.style.display = 'flex';
 
+  // Stop the game cleanly when the user navigates to another screen (plugin-nav mode)
+  window.addEventListener('screen:changed', (e) => {
+    if (e.detail?.id !== 'plugin-rock_n_rolla' && gameRunning) {
+      gameRunning = false;
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      cancelMetronome();
+      stopChordScorer();
+    }
+  });
+
   // Auto-load random content/ arrangement, then scan DLC sources
   (async () => {
     statusMsg.textContent = 'LOADING...';
@@ -1896,6 +1902,7 @@
       if (data.error === 'no_content') {
         statusMsg.textContent = 'NO BUILT-IN CONTENT — LOAD AN XML';
       } else {
+        _hasContent = true;
         applySourceData(data);
         overlayBody.textContent = `Arrangement loaded — can you name that tune? Hit START!`;
       }

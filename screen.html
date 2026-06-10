@@ -31,8 +31,7 @@
       overflow: hidden;
       width: 100%;
       position: relative;
-      display: flex;
-      flex-direction: column;
+      /* display/flex-direction are set by JS so slopsmith's .screen{display:none} can still hide this div */
     }
 
     /* TOP BAR */
@@ -337,7 +336,7 @@
 <!-- FOOTER -->
 <div id="footer">
   <button class="btn btn-start" id="btn-start">▶ START</button>
-  <button class="btn btn-detect" id="btn-detect">🎙 DETECT</button>
+  <button class="btn btn-detect active-detect" id="btn-detect">🎙 DETECT ON</button>
   <button class="btn btn-detect active-detect" id="btn-metro">🥁 METRO ON</button>
   <button class="btn btn-detect" id="btn-infinite">∞ LIVES</button>
   <span style="font-size:14px;color:#f5c518;margin-left:6px;font-family:'Press Start 2P',monospace">v0.14</span>
