@@ -1,7 +1,7 @@
 {
   "id": "rock_n_rolla",
   "name": "Rock 'n' Rolla",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Donkey Kong-style guitarcade — strum the chord on each barrel before it rolls past!",
   "script": "screen.js",
   "routes": "routes.py",

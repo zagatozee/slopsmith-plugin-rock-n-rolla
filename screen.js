@@ -13,6 +13,8 @@
   /* ═══════════════════════════════════════════
      CONSTANTS
   ═══════════════════════════════════════════ */
+  const VERSION          = '0.15.0';
+
   const LIVES_MAX        = 3;
   const BARREL_W         = 74;
   const BARREL_H         = 46;
@@ -1882,6 +1884,8 @@
   updateHUD();
   updateDiagrams();
   overlay.style.display = 'flex';
+  const _verEl = document.getElementById('version-display');
+  if (_verEl) _verEl.textContent = 'v' + VERSION;
 
   // Stop the game cleanly when the user navigates to another screen (plugin-nav mode)
   window.addEventListener('screen:changed', (e) => {
