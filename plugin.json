@@ -1,0 +1,21 @@
+{
+  "id": "rock_n_rolla",
+  "name": "Rock 'n' Rolla",
+  "version": "0.14.0",
+  "description": "Donkey Kong-style guitarcade — strum the chord on each barrel before it rolls past!",
+  "script": "screen.js",
+  "routes": "routes.py",
+  "nav": { "label": "Rock 'n' Rolla", "screen": "plugin-rock_n_rolla" },
+  "screen": "screen.html",
+  "minigame": {
+    "title": "Rock 'n' Rolla",
+    "tagline": "Strum the chord on each barrel before it rolls past!",
+    "type": "chart-free",
+    "scoring": "chord",
+    "thumbnail": "thumb.png",
+    "modifiers": [
+      { "id": "speed", "label": "Speed", "default": "normal", "values": ["easy", "normal", "hard", "insane"] },
+      { "id": "lives", "label": "Lives", "default": "3", "values": ["infinite", "1", "3", "5"] }
+    ]
+  }
+}

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Rock 'n' Rolla</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&display=swap');
+
+    :root {
+      --dk-red:    #d63b2f;
+      --dk-yellow: #f5c518;
+      --dk-blue:   #1a4a8a;
+      --dk-brown:  #7a3b1e;
+      --dk-tan:    #c8903a;
+      --dk-sky:    #5ba4cf;
+      --dk-green:  #2e8b57;
+      --dk-orange: #e07020;
+      --dk-white:  #f0e8d0;
+      --dk-black:  #1a1008;
+      --hit-glow:  #00ff88;
+      --miss-glow: #ff2244;
+    }
+
+    #plugin-rock_n_rolla * { box-sizing: border-box; margin: 0; padding: 0; image-rendering: pixelated; }
+
+    #plugin-rock_n_rolla {
+      background: var(--dk-black);
+      color: var(--dk-white);
+      font-family: 'Press Start 2P', monospace;
+      overflow: hidden;
+      width: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* TOP BAR */
+    #topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px;
+      background: var(--dk-red);
+      border-bottom: 4px solid var(--dk-yellow);
+      flex-shrink: 0; gap: 12px;
+    }
+    #topbar h1 { font-size: 11px; color: var(--dk-yellow); text-shadow: 2px 2px 0 #000; letter-spacing: 1px; }
+    #hud { display: flex; gap: 20px; font-size: 16px; color: var(--dk-white); }
+    #hud span { text-shadow: 1px 1px 0 #000; }
+    #hud .label { color: var(--dk-yellow); }
+
+    /* MAIN */
+    #main {
+      display: flex;
+      position: absolute;
+      left: 0; right: 0;
+      /* top/bottom set by JS based on measured chrome */
+      overflow: hidden;
+    }
+
+    /* GAME AREA */
+    #game-wrap { flex: 1; position: relative; overflow: hidden; }
+    #gameCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+    /* SIDEBAR */
+    #sidebar {
+      width: 230px;
+      background: #111;
+      border-left: 4px solid var(--dk-yellow);
+      display: flex; flex-direction: column;
+      overflow: hidden; flex-shrink: 0;
+      /* height inherited from #main absolute positioning */
+    }
+    #sidebar h2 {
+      font-size: 14px; color: var(--dk-yellow);
+      padding: 10px 10px;
+      background: var(--dk-brown);
+      border-bottom: 2px solid var(--dk-orange);
+      text-align: center;
+    }
+    #chord-panel {
+      flex: 1; overflow-y: auto; padding: 6px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    #chord-panel::-webkit-scrollbar { width: 5px; }
+    #chord-panel::-webkit-scrollbar-thumb { background: var(--dk-brown); }
+    .chord-chip {
+      padding: 4px 8px; font-family: 'VT323', monospace; font-size: 15px;
+      background: #1e1408; border: 2px solid var(--dk-brown);
+      cursor: pointer; color: var(--dk-white);
+      display: flex; justify-content: space-between; align-items: center;
+      user-select: none; transition: background .1s;
+    }
+    .chord-chip:hover { background: var(--dk-brown); }
+    .chord-chip.active { border-color: var(--dk-yellow); background: #3a2008; color: var(--dk-yellow); }
+    .chord-chip .chip-check { color: var(--dk-green); font-size: 12px; }
+
+    /* ── FLOATING CHORD DIAGRAM PANELS ── */
+    .chord-float {
+      position: absolute;
+      background: rgba(6,3,0,0.95);
+      border: 3px solid var(--dk-yellow);
+      padding: 10px 12px 12px;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 6px;
+      pointer-events: none;
+      z-index: 5;
+      min-width: 150px;
+      box-shadow: 0 0 16px rgba(0,0,0,0.7);
+    }
+    .chord-float.current { display: none !important; }
+    .chord-float.next    { display: none !important; }
+
+    .cf-label {
+      font-size: 14px;
+      letter-spacing: 1px;
+      color: var(--dk-yellow);
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .cf-label.next-label { color: var(--dk-tan); }
+
+    .cf-name {
+      font-family: 'VT323', monospace;
+      font-size: 26px;
+      color: var(--dk-white);
+      text-shadow: 1px 1px 0 #000;
+      text-align: center;
+      line-height: 1;
+      min-height: 28px;
+    }
+    .cf-name.current-name { color: var(--hit-glow); }
+    .cf-name.next-name    { color: var(--dk-tan); }
+
+    canvas.diag-canvas { display: block; }
+
+    /* ── TIMING FEEDBACK POPUP ── */
+    #timing-popup {
+      position: absolute;
+      left: 50%;
+      top: 35%;
+      transform: translateX(-50%);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 18px;
+      font-weight: bold;
+      pointer-events: none;
+      z-index: 25;
+      opacity: 0;
+      text-shadow: 0 0 12px currentColor, 2px 2px 0 #000;
+      transition: opacity 0.05s;
+      white-space: nowrap;
+    }
+    #timing-popup.show { opacity: 1; }
+
+    /* FLASH */
+    #flash {
+      position: absolute; inset: 0; pointer-events: none; z-index: 20; opacity: 0;
+    }
+    #flash.hit  { background: rgba(0,255,136,0.22); opacity: 1; }
+    #flash.miss { background: rgba(255,34,68,0.22);  opacity: 1; }
+
+    /* DEBUG PANEL */
+    #debug-panel {
+      display: none;
+      position: absolute;
+      top: 8px; right: 8px;
+      background: rgba(0,0,0,0.88);
+      border: 2px solid #444;
+      padding: 8px 10px;
+      z-index: 30;
+      font-family: monospace;
+      font-size: 11px;
+      color: #0f0;
+      min-width: 320px;
+      max-width: 420px;
+      pointer-events: none;
+    }
+    #debug-panel h4 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px;
+      color: #f5c518;
+      margin-bottom: 6px;
+    }
+    #debug-panel .debug-line {
+      padding: 2px 0;
+      border-bottom: 1px solid #222;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    #debug-panel .debug-line.fresh { color: #00ffcc; }
+    #debug-panel .debug-none { color: #555; font-style: italic; }
+
+    /* FOOTER */
+    #footer {
+      padding: 7px 12px;
+      background: #1a1008;
+      border-top: 4px solid var(--dk-brown);
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap;
+      /* Absolute within #plugin-rock_n_rolla so it doesn't leak to viewport */
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      z-index: 100;
+    }
+    .btn {
+      font-family: 'Press Start 2P', monospace; font-size: 14px;
+      padding: 8px 14px; border: 3px solid;
+      cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+      background: transparent; transition: transform .06s, box-shadow .06s;
+    }
+    .btn:active { transform: translate(2px,2px); box-shadow: none !important; }
+    .btn-start  { color: var(--dk-yellow); border-color: var(--dk-yellow); box-shadow: 3px 3px 0 var(--dk-orange); }
+    .btn-detect { color: var(--hit-glow);  border-color: var(--hit-glow);  box-shadow: 3px 3px 0 #007744; }
+    .btn-detect.active-detect { background: rgba(0,255,136,0.12); }
+    .btn-src    { color: var(--dk-sky);    border-color: var(--dk-sky);    box-shadow: 3px 3px 0 #2255aa; }
+
+    /* SOURCE ROW */
+    #source-row {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 5px 12px;
+      background: #0e0a04;
+      border-bottom: 2px solid #3a2008;
+      flex-shrink: 0;
+    }
+    #source-row label { font-size: 14px; color: var(--dk-tan); white-space: nowrap; }
+
+    select.src-select {
+      font-family: 'VT323', monospace; font-size: 14px;
+      background: #1a1008; color: var(--dk-white);
+      border: 2px solid var(--dk-tan); padding: 3px 6px;
+      max-width: 280px; flex: 1;
+    }
+    select.speed-select {
+      font-family: 'Press Start 2P', monospace; font-size: 14px;
+      background: #1a1008; color: var(--dk-tan);
+      border: 2px solid var(--dk-tan); padding: 4px 8px;
+    }
+
+    /* file input styled */
+    #file-input { display: none; }
+    .btn-file { color: var(--dk-sky); border-color: var(--dk-sky); box-shadow: 3px 3px 0 #2255aa; }
+
+    #status-msg {
+      font-family: 'VT323', monospace; font-size: 24px; color: #888;
+      margin-left: auto; white-space: nowrap;
+    }
+
+    /* OVERLAY */
+    #overlay {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.82); z-index: 10; gap: 14px;
+    }
+    #overlay h2 { font-size: 32px; color: var(--dk-yellow); text-shadow: 3px 3px 0 #000; text-align: center; }
+    #overlay p  { font-family: 'Press Start 2P', monospace; font-size: 40px; font-weight: bold; color: var(--dk-white); text-align: center; line-height: 1.6; max-width: 900px; text-shadow: 2px 2px 0 #000; }
+    #overlay .final-score { font-size: 26px; color: var(--hit-glow); text-shadow: 0 0 20px var(--hit-glow); }
+  </style>
+</head>
+<body>
+
+<!-- HUD elements kept in DOM for JS but topbar removed — Slopsmith provides header -->
+<div id="topbar" style="display:none">
+  <h1>🎸 ROCK 'N' ROLLA <span style="font-size:10px;color:#f5c518;vertical-align:middle;margin-left:8px;text-shadow:1px 1px 0 #000">v0.14</span></h1>
+  <div id="hud">
+    <span><span class="label">SCORE </span><span id="hud-score">000000</span></span>
+    <span><span class="label">STREAK </span><span id="hud-streak">0</span></span>
+    <span><span class="label">LIVES </span><span id="hud-lives">❤️❤️❤️</span></span>
+    <span><span class="label">LEVEL </span><span id="hud-level">1</span></span>
+    <span><span class="label">QUEUE </span><span id="hud-queue">0/0</span></span>
+  </div>
+</div>
+
+<!-- SOURCE SELECTOR ROW -->
+<div id="source-row">
+  <label>SOURCE:</label>
+  <select class="src-select" id="dlc-select">
+    <option value="">— scan DLC for XMLs —</option>
+  </select>
+  <button class="btn btn-src" id="btn-refresh-dlc">↻ REFRESH</button>
+  <label style="margin-left:6px">OR UPLOAD:</label>
+  <input type="file" id="file-input" accept=".xml"/>
+  <button class="btn btn-file" id="btn-upload">📂 XML FILE</button>
+  <label style="margin-left:10px;color:var(--dk-tan)">SPEED:</label>
+  <select class="speed-select" id="speed-select">
+    <option value="1">EASY</option>
+    <option value="1.5" selected>NORMAL</option>
+    <option value="2.2">HARD</option>
+    <option value="3">INSANE</option>
+  </select>
+</div>
+
+<!-- MAIN GAME AREA + SIDEBAR -->
+<div id="main">
+  <div id="game-wrap">
+    <canvas id="gameCanvas"></canvas>
+    <div id="flash"></div>
+
+    <!-- Floating chord diagram: CURRENT -->
+    <div class="chord-float current" id="cf-current">
+      <div class="cf-label">▶ NOW</div>
+      <div class="cf-name current-name" id="cf-current-name">—</div>
+      <canvas class="diag-canvas" id="diag-current" width="140" height="150"></canvas>
+    </div>
+
+    <!-- Floating chord diagram: NEXT -->
+    <div class="chord-float next" id="cf-next">
+      <div class="cf-label next-label">NEXT ▷</div>
+      <div class="cf-name next-name" id="cf-next-name">—</div>
+      <canvas class="diag-canvas" id="diag-next" width="140" height="150"></canvas>
+    </div>
+
+    <!-- Debug panel -->
+    <div id="debug-panel">
+      <h4>🔍 NOTEDETECT EVENTS</h4>
+      <div id="debug-lines"><div class="debug-none">no events yet — play something</div></div>
+    </div>
+
+    <!-- Timing feedback -->
+    <div id="timing-popup"></div>
+
+    <!-- Overlay -->
+    <div id="overlay">
+      <h2 id="overlay-title">ROCK 'N' ROLLA</h2>
+      <p id="overlay-body">Load a source above, then hit START.<br>Strum chords to clear barrels before they hit the floor!</p>
+      <div class="final-score" id="overlay-score" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <h2>CHORD POOL</h2>
+    <div id="chord-panel">
+      <div style="font-family:VT323,monospace;font-size:14px;color:#666;text-align:center;padding:20px">Load a source first</div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div id="footer">
+  <button class="btn btn-start" id="btn-start">▶ START</button>
+  <button class="btn btn-detect" id="btn-detect">🎙 DETECT</button>
+  <button class="btn btn-detect active-detect" id="btn-metro">🥁 METRO ON</button>
+  <button class="btn btn-detect" id="btn-infinite">∞ LIVES</button>
+  <span style="font-size:14px;color:#f5c518;margin-left:6px;font-family:'Press Start 2P',monospace">v0.14</span>
+  <span id="hud-score-inline" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#f5c518;margin-left:auto">000000</span>
+  <span id="hud-streak-inline" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#f0e8d0">STK:0</span>
+  <span id="hud-lives-inline" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#f0e8d0">❤️❤️❤️</span>
+  <span id="hud-level-inline" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#f0e8d0">LVL:1</span>
+  <span id="status-msg" style="font-family:'VT323',monospace;font-size:24px;color:#888;margin-left:12px">NO SOURCE LOADED</span>
+</div>
+
+<script src="screen.js"></script>
+</body>
+</html>
